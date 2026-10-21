@@ -42,6 +42,7 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
             .AddOptions<ClientErrorsConfig>()
             .BindConfiguration(ClientErrorsConfig.SECTION_NAME);
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<DiscordWebhook>();
         services.AddSingleton<ClientErrorIngest>();
         services.AddSingleton<ClientErrorStore>();
         services.AddSingleton<ClientErrorRetention>();

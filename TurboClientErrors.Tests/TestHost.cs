@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -35,6 +37,22 @@ internal sealed class Settings(ClientErrorsConfig value) : IOptionsMonitor<Clien
     public IDisposable? OnChange(Action<ClientErrorsConfig, string?> listener) => null;
 }
 
+/// <summary>Answers every request 204 and keeps what was posted.</summary>
+internal sealed class RecordingHandler : HttpMessageHandler
+{
+    public List<string> Posts { get; } = [];
+
+    protected override async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken
+    )
+    {
+        Posts.Add(await request.Content!.ReadAsStringAsync(cancellationToken));
+
+        return new HttpResponseMessage(HttpStatusCode.NoContent);
+    }
+}
+
 /// <summary>
 /// The plugin's services over an in-memory SQLite database (the real SQL: transactions, unique
 /// keys, bulk deletes), with a clock the test moves.
@@ -66,6 +84,12 @@ internal sealed class TestHost : IDisposable
         Ingest = new ClientErrorIngest(Settings, Time);
         Store = new ClientErrorStore(scopes, Settings, NullLogger<ClientErrorStore>.Instance);
         Retention = new ClientErrorRetention(scopes, Settings, Time);
+        Discord = new DiscordWebhook(
+            Settings,
+            Time,
+            NullLogger<DiscordWebhook>.Instance,
+            handler: Http
+        );
     }
 
     public ManualTime Time { get; } = new();
@@ -79,6 +103,10 @@ internal sealed class TestHost : IDisposable
     public ClientErrorStore Store { get; }
 
     public ClientErrorRetention Retention { get; }
+
+    public RecordingHandler Http { get; } = new();
+
+    public DiscordWebhook Discord { get; }
 
     public T Query<T>(Func<ClientErrorsDbContext, T> query)
     {
@@ -108,6 +136,7 @@ internal sealed class TestHost : IDisposable
     public void Dispose()
     {
         Services.Dispose();
+        Discord.Dispose();
         _connection.Dispose();
     }
 

@@ -492,6 +492,51 @@ public class ClientErrorsTests
         Assert.True(host.Query(db => db.Days.All(x => x.IssueId == busy)));
     }
 
+    // Discord.
+
+    [Fact]
+    public async Task No_webhook_posts_nothing()
+    {
+        using var host = new TestHost();
+        var result = await host.StoreAsync(1, TestHost.Report());
+
+        Assert.False(await host.Discord.PostNewAsync(result.NewIssues.Single()));
+        Assert.Empty(host.Http.Posts);
+    }
+
+    [Fact]
+    public async Task A_webhook_gets_new_issues_only_within_its_hourly_limit()
+    {
+        using var host = new TestHost(
+            new ClientErrorsConfig
+            {
+                DiscordWebhookUrl = "https://discord.example/api/webhooks/1/x",
+                DiscordMaxPerHour = 2,
+            }
+        );
+        var results = new[]
+        {
+            await host.StoreAsync(1, TestHost.Report(message: "one")),
+            await host.StoreAsync(1, TestHost.Report(message: "one")),
+            await host.StoreAsync(1, TestHost.Report(message: "two")),
+            await host.StoreAsync(1, TestHost.Report(message: "three")),
+        };
+        var issues = results.SelectMany(x => x.NewIssues).ToList();
+
+        Assert.Equal(3, issues.Count);
+        Assert.True(await host.Discord.PostNewAsync(issues[0]));
+        Assert.True(await host.Discord.PostNewAsync(issues[1]));
+        Assert.False(await host.Discord.PostNewAsync(issues[2]));
+        Assert.Equal(2, host.Http.Posts.Count);
+        Assert.Contains("New client error #1", host.Http.Posts[0]);
+        Assert.Contains("\"parse\":[]", host.Http.Posts[0]);
+
+        // The next hour says how many it left out.
+        host.Time.Now = host.Time.Now.AddHours(1);
+        Assert.True(await host.Discord.PostNewAsync(issues[2]));
+        Assert.Contains("1 more new issues were not posted", host.Http.Posts[2]);
+    }
+
     // Admin.
 
     [Fact]

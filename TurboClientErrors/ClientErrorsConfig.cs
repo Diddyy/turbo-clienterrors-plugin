@@ -1,3 +1,5 @@
+using Turbo.Primitives.Settings;
+
 namespace TurboClientErrors;
 
 /// <summary>
@@ -43,4 +45,11 @@ public sealed class ClientErrorsConfig
     /// ever.
     /// </summary>
     public int IssueRetentionDays { get; init; } = 90;
+
+    /// <summary>A Discord webhook each new issue is posted to. Empty: none.</summary>
+    [SecretSetting]
+    public string DiscordWebhookUrl { get; init; } = string.Empty;
+
+    /// <summary>The most new issues posted to Discord in an hour; the rest are counted in the next post.</summary>
+    public int DiscordMaxPerHour { get; init; } = 10;
 }
