@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Turbo.Contracts.Plugins;
+using Turbo.Contracts.Plugins.Admin;
 using Turbo.Contracts.Plugins.Exports;
 using Turbo.Database.Extensions;
 using Turbo.Primitives.Networking.Extensions;
@@ -16,7 +17,8 @@ namespace TurboClientErrors;
 
 /// <summary>
 /// The errors players' clients hit, grouped into issues: what was thrown, how often, on which builds
-/// and browsers, and what the client did just before, kept in <c>clienterrors_*</c>. The client half is the <c>clienterrors</c> extension
+/// and browsers, and what the client did just before, kept in <c>clienterrors_*</c> and shown on the
+/// admin panel's Client errors page. The client half is the <c>clienterrors</c> extension
 /// (<see cref="ClientErrorsPackets"/>): a client reports only once the server accepted it.
 /// </summary>
 public sealed class ClientErrorsPlugin : ITurboPlugin
@@ -44,6 +46,7 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
         services.AddSingleton<ClientErrorStore>();
         services.AddSingleton<ClientErrorRetention>();
         services.AddSingleton<ClientErrorsWorker>();
+        services.AddSingleton<IPluginAdmin, ClientErrorsAdmin>();
     }
 
     public Task StartAsync(IServiceProvider services, CancellationToken ct)

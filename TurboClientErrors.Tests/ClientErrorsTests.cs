@@ -376,6 +376,62 @@ public class ClientErrorsTests
     }
 
     [Fact]
+    public async Task A_resolved_issue_reopens_on_a_new_build_but_not_on_the_build_it_was_resolved_on()
+    {
+        using var host = new TestHost();
+
+        await host.StoreAsync(1, TestHost.Report(build: "build-one"));
+
+        var admin = host.Admin();
+        var id = host.Query(db => db.Issues.Single().Id);
+
+        await admin.CallAsync("POST issues/{id}/resolve", id);
+
+        // An old client still on the resolved build: counted, still resolved.
+        var same = await host.StoreAsync(2, TestHost.Report(build: "build-one"));
+
+        Assert.Equal(0, same.Reopened);
+        Assert.Equal(IssueEntity.RESOLVED, host.Query(db => db.Issues.Single().Status));
+
+        // A build with a different line for the same error: the fix did not hold.
+        var later = await host.StoreAsync(
+            3,
+            TestHost.Report(
+                build: "build-two",
+                stack: "TypeError: x\n    at Xe (https://hotel.example/assets/index-Zz9_YYYY.js:40:10)\n    at Qa (https://hotel.example/assets/vendor-Ck2pL0aa.js:1:1200)"
+            )
+        );
+        var issue = host.Query(db => db.Issues.Single());
+
+        Assert.Empty(later.NewIssues);
+        Assert.Equal(1, later.Reopened);
+        Assert.Equal(IssueEntity.OPEN, issue.Status);
+        Assert.Equal("build-two", issue.ReopenedBuild);
+        Assert.Equal(3, issue.Occurrences);
+        Assert.Equal(2, host.Query(db => db.Fingerprints.Count()));
+        Assert.Contains(
+            "build-one (2), build-two (1)",
+            Admin.Json(await admin.CallAsync("GET issues/{id}", id))
+        );
+    }
+
+    [Fact]
+    public async Task An_ignored_issue_stays_ignored_and_counted()
+    {
+        using var host = new TestHost();
+
+        await host.StoreAsync(1, TestHost.Report(build: "one"));
+
+        var id = host.Query(db => db.Issues.Single().Id);
+
+        await host.Admin().CallAsync("POST issues/{id}/ignore", id);
+        await host.StoreAsync(1, TestHost.Report(build: "two"));
+
+        Assert.Equal(IssueEntity.IGNORED, host.Query(db => db.Issues.Single().Status));
+        Assert.Equal(2, host.Query(db => db.Issues.Single().Occurrences));
+    }
+
+    [Fact]
     public async Task Unreadable_reports_are_counted_and_skipped()
     {
         using var host = new TestHost();
@@ -434,6 +490,147 @@ public class ClientErrorsTests
         Assert.Equal(1, host.Query(db => db.Fingerprints.Count()));
         Assert.True(host.Query(db => db.Facets.All(x => x.IssueId == busy)));
         Assert.True(host.Query(db => db.Days.All(x => x.IssueId == busy)));
+    }
+
+    // Admin.
+
+    [Fact]
+    public async Task The_admin_pages_list_filter_resolve_link_and_delete_behind_their_own_nodes()
+    {
+        using var host = new TestHost();
+
+        await host.StoreAsync(
+            1,
+            TestHost.Report(),
+            TestHost.Report(kind: "rejection", message: "Load failed")
+        );
+        await host.StoreAsync(2, TestHost.Report());
+
+        var admin = host.Admin();
+        var id = host.Query(db => db.Issues.Single(x => x.Message.Contains("roomId")).Id);
+        var other = host.Query(db => db.Issues.Single(x => x.Message.Contains("Load")).Id);
+
+        Assert.Equal(
+            [
+                "plugin.clienterrors.issues.view",
+                "plugin.clienterrors.issues.manage",
+                "plugin.clienterrors.issues.delete",
+            ],
+            admin.Nodes
+        );
+        Assert.All(
+            admin.Map.Where(x => x.Key.StartsWith("GET")),
+            x => Assert.Equal("plugin.clienterrors.issues.view", x.Value.Node)
+        );
+        Assert.Equal("plugin.clienterrors.issues.manage", admin.Map["POST issues/{id}/link"].Node);
+        Assert.Equal("plugin.clienterrors.issues.delete", admin.Map["DELETE issues/{id}"].Node);
+        Assert.Equal(["issues", "issue", "occurrence"], admin.Pages.Select(x => x.Id));
+
+        var list = Admin.Json(await admin.CallAsync("GET issues"));
+
+        Assert.Contains("\"total\":2", list);
+        Assert.Contains("\"players\":2", list);
+        Assert.Contains("Chrome 141 (2)", list);
+        Assert.Equal(
+            "·············█",
+            System
+                .Text.Json.JsonDocument.Parse(list)
+                .RootElement.GetProperty("items")[1]
+                .GetProperty("trend")
+                .GetString()
+        );
+        Assert.Contains(
+            "\"total\":1",
+            Admin.Json(await admin.CallAsync("GET issues", query: "kind=rejection"))
+        );
+        Assert.Contains(
+            "\"total\":1",
+            Admin.Json(await admin.CallAsync("GET issues", query: "q=roomId"))
+        );
+        Assert.Contains(
+            "\"total\":2",
+            Admin.Json(await admin.CallAsync("GET issues", query: "q=a1b2c3d4e5f6"))
+        );
+
+        await admin.CallAsync("POST issues/{id}/resolve", id);
+        Assert.Contains(
+            "\"total\":1",
+            Admin.Json(await admin.CallAsync("GET issues", query: "status=open"))
+        );
+        Assert.Equal(9, host.Query(db => db.Issues.Single(x => x.Id == id).ResolvedBy));
+        Assert.Contains(
+            "\"closed\":true",
+            Admin.Json(await admin.CallAsync("GET issues/{id}", id))
+        );
+
+        await admin.CallAsync("POST issues/{id}/reopen", id);
+        Assert.Null(host.Query(db => db.Issues.Single(x => x.Id == id).ResolvedAt));
+
+        var linked = await admin.CallAsync(
+            "POST issues/{id}/link",
+            id,
+            body: """{"report":"https://forum.example/t/123","note":"Tester saw it in the catalog"}"""
+        );
+
+        Assert.Equal(200, linked.Status);
+        Assert.Equal(
+            "https://forum.example/t/123",
+            host.Query(db => db.Issues.Single(x => x.Id == id).Report)
+        );
+
+        // Only the note changed: the report stays.
+        await admin.CallAsync("POST issues/{id}/link", id, body: """{"note":"And in the shop"}""");
+        Assert.Equal(
+            "https://forum.example/t/123",
+            host.Query(db => db.Issues.Single(x => x.Id == id).Report)
+        );
+        Assert.Equal("And in the shop", host.Query(db => db.Issues.Single(x => x.Id == id).Note));
+        Assert.Equal(
+            400,
+            (
+                await admin.CallAsync(
+                    "POST issues/{id}/link",
+                    id,
+                    body: $$"""{"report":"{{new string('x', 600)}}"}"""
+                )
+            ).Status
+        );
+
+        var occurrences = Admin.Json(await admin.CallAsync("GET issues/{id}/occurrences", id));
+        var occurrence = host.Query(db => db.Occurrences.First(x => x.IssueId == id).Id);
+
+        Assert.Contains("\"total\":2", occurrences);
+        Assert.Contains(
+            "RoomView",
+            Admin.Json(await admin.CallAsync("GET occurrences/{id}/stack", occurrence))
+        );
+        Assert.Contains(
+            "\"before\":\"-1.0 s\"",
+            Admin.Json(await admin.CallAsync("GET occurrences/{id}/breadcrumbs", occurrence))
+        );
+        Assert.Equal(
+            "text/plain",
+            (await admin.CallAsync("GET occurrences/{id}/stack.txt", occurrence)).ContentType
+        );
+        Assert.Contains(
+            "\"total\":14",
+            Admin.Json(await admin.CallAsync("GET issues/{id}/days", id))
+        );
+        Assert.Contains(
+            "{\"label\":\"Reports today (UTC)\",\"value\":3}",
+            Admin.Json(await admin.CallAsync("GET stats"))
+        );
+
+        Assert.Equal(204, (await admin.CallAsync("DELETE issues/{id}", other)).Status);
+        Assert.Equal(404, (await admin.CallAsync("GET issues/{id}", other)).Status);
+        Assert.Equal(0, host.Query(db => db.Occurrences.Count(x => x.IssueId == other)));
+    }
+
+    [Fact]
+    public void The_sparkline_is_one_character_a_day()
+    {
+        Assert.Equal("·▁█▄", ClientErrorsAdmin.Sparkline([0, 1, 8, 4]));
+        Assert.Equal("····", ClientErrorsAdmin.Sparkline([0, 0, 0, 0]));
     }
 
     [Fact]

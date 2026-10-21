@@ -10,6 +10,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Turbo.Contracts.Plugins.Admin;
 using Turbo.Database.Delegates;
 using TurboClientErrors.Database;
 using TurboClientErrors.Ingest;
@@ -99,6 +100,11 @@ internal sealed class TestHost : IDisposable
             CT
         );
 
+    public Admin Admin() =>
+        new(
+            new ClientErrorsAdmin(Services.GetRequiredService<IServiceScopeFactory>(), Ingest, Time)
+        );
+
     public void Dispose()
     {
         Services.Dispose();
@@ -158,4 +164,59 @@ internal sealed class TestHost : IDisposable
                     ],
             }
         );
+}
+
+/// <summary>The admin endpoints by "METHOD pattern", called as the host would.</summary>
+internal sealed class Admin : IPluginAdminBuilder
+{
+    public Admin(ClientErrorsAdmin admin) => admin.Configure(this);
+
+    public Dictionary<
+        string,
+        (string Node, Func<PluginAdminRequest, CancellationToken, Task<PluginAdminResult>> Handler)
+    > Map { get; } = [];
+
+    public List<string> Nodes { get; } = [];
+
+    public List<PluginAdminPage> Pages { get; } = [];
+
+    public string Node(string name, string description)
+    {
+        Nodes.Add($"plugin.clienterrors.{name}");
+
+        return $"plugin.clienterrors.{name}";
+    }
+
+    void IPluginAdminBuilder.Map(
+        string method,
+        string pattern,
+        string node,
+        Func<PluginAdminRequest, CancellationToken, Task<PluginAdminResult>> handler
+    ) => Map[$"{method} {pattern}"] = (node, handler);
+
+    public void Page(PluginAdminPage page) => Pages.Add(page);
+
+    public Task<PluginAdminResult> CallAsync(
+        string route,
+        int id = 0,
+        string query = "",
+        string? body = null
+    ) =>
+        Map[route]
+            .Handler(
+                new PluginAdminRequest(
+                    route.Split(' ')[0],
+                    route,
+                    new Dictionary<string, string> { ["id"] = id.ToString() },
+                    query
+                        .Split('&', StringSplitOptions.RemoveEmptyEntries)
+                        .Select(x => x.Split('='))
+                        .ToDictionary(x => x[0], x => Uri.UnescapeDataString(x[1])),
+                    body is null ? null : JsonDocument.Parse(body).RootElement,
+                    9
+                ),
+                TestHost.CT
+            );
+
+    public static string Json(PluginAdminResult result) => JsonSerializer.Serialize(result.Value);
 }
