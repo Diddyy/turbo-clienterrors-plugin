@@ -1,0 +1,10 @@
+{
+    "Name": "Turbo Client Errors",
+    "Key": "clienterrors",
+    "Version": "1.0.0",
+    "Author": "Diddyy",
+    "AssemblyFile": "TurboClientErrors.dll",
+    "Dependencies": [],
+    "TablePrefix": "clienterrors_",
+    "ApiVersion": 1
+}
