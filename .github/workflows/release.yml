@@ -16,7 +16,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: The existing tag to build and attach the package to (v1.2.3)
+        description: The tag to build and attach the package to (v1.2.3); made on the commit this run is started from if it does not exist
         required: true
 
 permissions:
@@ -31,6 +31,16 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
+      # A manual run may name a tag nobody pushed yet: make it on the commit the run was started from. A tag made with
+      # this run's token starts no second run.
+      - name: Make the tag of a manual run
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" > /dev/null 2>&1 \
+            || gh api "repos/${{ github.repository }}/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" > /dev/null
+
       - name: Check out the plugin
         uses: actions/checkout@v4
         with:
