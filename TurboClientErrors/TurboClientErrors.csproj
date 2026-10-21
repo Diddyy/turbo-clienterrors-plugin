@@ -60,5 +60,10 @@
       HintPath="$(TurboCloudPath)\Turbo.Messages\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Messages.dll"
       Private="$(TurboPrivate)"
     />
+    <Reference
+      Include="Turbo.Events"
+      HintPath="$(TurboCloudPath)\Turbo.Events\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Events.dll"
+      Private="$(TurboPrivate)"
+    />
   </ItemGroup>
 </Project>

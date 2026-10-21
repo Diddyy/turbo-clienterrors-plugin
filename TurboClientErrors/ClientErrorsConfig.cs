@@ -46,7 +46,10 @@ public sealed class ClientErrorsConfig
     /// </summary>
     public int IssueRetentionDays { get; init; } = 90;
 
-    /// <summary>A Discord webhook each new issue is posted to. Empty: none.</summary>
+    /// <summary>
+    /// A Discord webhook each new issue is posted to. Empty: none. For a hotel without the Discord
+    /// plugin: with it loaded, route plugin:clienterrors:issue.new there instead and leave this empty.
+    /// </summary>
     [SecretSetting]
     public string DiscordWebhookUrl { get; init; } = string.Empty;
 

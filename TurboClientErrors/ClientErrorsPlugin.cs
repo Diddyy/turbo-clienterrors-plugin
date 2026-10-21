@@ -8,6 +8,7 @@ using Turbo.Contracts.Plugins;
 using Turbo.Contracts.Plugins.Admin;
 using Turbo.Contracts.Plugins.Exports;
 using Turbo.Database.Extensions;
+using Turbo.Events;
 using Turbo.Primitives.Networking.Extensions;
 using TurboClientErrors.Database;
 using TurboClientErrors.Ingest;
@@ -29,10 +30,11 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
     private IDisposable? _capability;
     private IDisposable? _settingsListener;
     private ClientErrorsWorker? _worker;
+    private Notices? _notices;
 
     public string Key => "clienterrors";
 
-    public string Version => "1.0.0";
+    public string Version => "1.1.0";
 
     public void ConfigureServices(IServiceCollection services, PluginManifest manifest)
     {
@@ -43,6 +45,7 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
             .BindConfiguration(ClientErrorsConfig.SECTION_NAME);
         services.AddSingleton(TimeProvider.System);
         services.AddSingleton<DiscordWebhook>();
+        services.AddSingleton<Notices>();
         services.AddSingleton<ClientErrorIngest>();
         services.AddSingleton<ClientErrorStore>();
         services.AddSingleton<ClientErrorRetention>();
@@ -52,9 +55,11 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
 
     public Task StartAsync(IServiceProvider services, CancellationToken ct)
     {
-        _registry = services
-            .GetRequiredService<IHostServices>()
-            .GetRequiredService<IExtensionPacketRegistry>();
+        var host = services.GetRequiredService<IHostServices>();
+
+        _registry = host.GetRequiredService<IExtensionPacketRegistry>();
+        _notices = services.GetRequiredService<Notices>();
+        _notices.Publisher = host.GetRequiredService<EventSystem>().PublishAsync;
         _registrations.Add(
             _registry.RegisterParser(ClientErrorsPackets.REPORT, new ClientErrorReportParser())
         );
@@ -87,6 +92,12 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
 
         _worker = null;
         _registry = null;
+
+        // After the worker's last batch: what it stored on the way out is still told.
+        if (_notices is not null)
+            _notices.Publisher = null;
+
+        _notices = null;
     }
 
     private void OfferCapability(bool offer)

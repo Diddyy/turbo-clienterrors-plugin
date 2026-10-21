@@ -1,11 +1,16 @@
 using System;
 using System.Buffers.Binary;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging.Abstractions;
 using Turbo.Primitives.Packets;
+using Turbo.Primitives.Plugins.Events;
 using TurboClientErrors.Database;
 using TurboClientErrors.Ingest;
 using TurboClientErrors.Packets;
@@ -390,7 +395,7 @@ public class ClientErrorsTests
         // An old client still on the resolved build: counted, still resolved.
         var same = await host.StoreAsync(2, TestHost.Report(build: "build-one"));
 
-        Assert.Equal(0, same.Reopened);
+        Assert.Empty(same.Reopened);
         Assert.Equal(IssueEntity.RESOLVED, host.Query(db => db.Issues.Single().Status));
 
         // A build with a different line for the same error: the fix did not hold.
@@ -404,7 +409,7 @@ public class ClientErrorsTests
         var issue = host.Query(db => db.Issues.Single());
 
         Assert.Empty(later.NewIssues);
-        Assert.Equal(1, later.Reopened);
+        Assert.Equal(issue.Id, Assert.Single(later.Reopened).Issue.Id);
         Assert.Equal(IssueEntity.OPEN, issue.Status);
         Assert.Equal("build-two", issue.ReopenedBuild);
         Assert.Equal(3, issue.Occurrences);
@@ -535,6 +540,128 @@ public class ClientErrorsTests
         host.Time.Now = host.Time.Now.AddHours(1);
         Assert.True(await host.Discord.PostNewAsync(issues[2]));
         Assert.Contains("1 more new issues were not posted", host.Http.Posts[2]);
+    }
+
+    // Plugin notices.
+
+    /// <summary>
+    /// Waits (a few seconds at most) for <paramref name="calls"/> to reach <paramref name="count"/>:
+    /// the worker publishes after a batch is committed. The test never reads the database while the
+    /// worker runs (one SQLite connection).
+    /// </summary>
+    private static async Task WaitForAsync(Func<int> calls, int count)
+    {
+        for (var i = 0; i < 200 && calls() < count; i++)
+            await Task.Delay(25, CT);
+
+        Assert.Equal(count, calls());
+    }
+
+    [Fact]
+    public async Task The_worker_publishes_a_new_issue_as_a_plugin_notice()
+    {
+        using var host = new TestHost();
+        var published = new ConcurrentQueue<PluginNoticeEvent>();
+
+        host.Notices.Publisher = (notice, _) =>
+        {
+            published.Enqueue(notice);
+
+            return Task.CompletedTask;
+        };
+
+        var worker = host.Worker();
+
+        worker.Start();
+        await host.Ingest.AcceptAsync("s1", 4, Bytes(TestHost.Report(build: "b1")), Accepts, CT);
+        await WaitForAsync(() => published.Count, 1);
+        await worker.StopAsync();
+
+        var notice = Assert.Single(published);
+        var id = host.Query(db => db.Issues.Single().Id).ToString();
+
+        Assert.Equal("clienterrors", notice.Source);
+        Assert.Equal("issue.new", notice.Topic);
+        Assert.Equal(id, notice.Key);
+        Assert.Equal(PluginNoticeLevel.Error, notice.Level);
+        Assert.Equal($"New client error #{id}", notice.Title);
+        Assert.Contains("Cannot read properties of undefined", notice.Text);
+        Assert.Equal(
+            ["Kind=error", "Build=b1", "Players=1", "Count=1"],
+            notice.Fields.Select(x => $"{x.Name}={x.Value}")
+        );
+        Assert.Null(notice.Url);
+    }
+
+    [Fact]
+    public async Task A_publisher_that_throws_does_not_stop_the_worker_storing()
+    {
+        using var host = new TestHost();
+        var calls = 0;
+
+        host.Notices.Publisher = (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+
+            throw new InvalidOperationException("relay down");
+        };
+
+        var worker = host.Worker();
+
+        worker.Start();
+        await host.Ingest.AcceptAsync("s1", 1, Bytes(TestHost.Report(message: "one")), Accepts, CT);
+        await WaitForAsync(() => Volatile.Read(ref calls), 1);
+        await host.Ingest.AcceptAsync("s1", 1, Bytes(TestHost.Report(message: "two")), Accepts, CT);
+        await WaitForAsync(() => Volatile.Read(ref calls), 2);
+        await worker.StopAsync();
+
+        Assert.Equal(2, host.Query(db => db.Issues.Count()));
+        Assert.Equal(2, host.Query(db => db.Occurrences.Count()));
+    }
+
+    [Fact]
+    public async Task A_reopened_issue_is_a_warning_keyed_by_its_build_and_links_to_the_panel()
+    {
+        using var host = new TestHost();
+        var notices = new Notices(
+            NullLogger<Notices>.Instance,
+            new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["Turbo:Admin:PanelUrl"] = "https://admin.example/",
+                    }
+                )
+                .Build()
+        );
+        var result = await host.StoreAsync(1, TestHost.Report());
+        var issue = result.NewIssues.Single();
+
+        issue.Issue.ReopenedBuild = "b2";
+
+        var notice = Notices.Fit(notices.Issue(issue, reopened: true));
+
+        Assert.Equal("issue.reopened", notice.Topic);
+        Assert.Equal($"{issue.Issue.Id}@b2", notice.Key);
+        Assert.Equal(PluginNoticeLevel.Warning, notice.Level);
+        Assert.Equal(
+            $"https://admin.example/plugin/clienterrors/issue/{issue.Issue.Id}",
+            notice.Url
+        );
+        Assert.Equal("b2", notice.Fields.Single(x => x.Name == "Build").Value);
+        // Cut to the event's limits, not refused.
+        var fitted = Notices.Fit(
+            notice with
+            {
+                Title = new string('t', 300),
+                Text = new string('x', 5000),
+                Fields = [.. Enumerable.Range(0, 30).Select(x => new PluginNoticeField("f", "v"))],
+            }
+        );
+
+        Assert.Equal(PluginNoticeEvent.MAX_TITLE_LENGTH, fitted.Title.Length);
+        Assert.Equal(PluginNoticeEvent.MAX_TEXT_LENGTH, fitted.Text!.Length);
+        Assert.Equal(PluginNoticeEvent.MAX_FIELDS, fitted.Fields.Length);
     }
 
     // Admin.

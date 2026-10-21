@@ -12,7 +12,7 @@ using TurboClientErrors.Database;
 
 namespace TurboClientErrors.Ingest;
 
-/// <summary>An issue a batch made, with the report that made it.</summary>
+/// <summary>An issue a batch made or reopened, with the report that did.</summary>
 public sealed record NewIssue(IssueEntity Issue, ClientErrorReport Report);
 
 /// <summary>What one batch did.</summary>
@@ -20,7 +20,7 @@ public sealed record StoreResult(
     int Stored,
     int Unreadable,
     IReadOnlyList<NewIssue> NewIssues,
-    int Reopened
+    IReadOnlyList<NewIssue> Reopened
 );
 
 /// <summary>
@@ -81,7 +81,7 @@ public sealed class ClientErrorStore(
         }
 
         if (read.Count == 0)
-            return new StoreResult(0, unreadable, [], 0);
+            return new StoreResult(0, unreadable, [], []);
 
         await using var scope = scopes.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<ClientErrorsDbContext>();
@@ -167,7 +167,7 @@ public sealed class ClientErrorStore(
             .Days.Where(x => issueIds.Contains(x.IssueId) && dayKeys.Contains(x.Day))
             .ToListAsync(ct)
             .ConfigureAwait(false);
-        var reopened = 0;
+        var reopened = new List<NewIssue>();
 
         foreach (var (issue, group, newFingerprint) in assigned)
         {
@@ -186,7 +186,7 @@ public sealed class ClientErrorStore(
                     issue.Status = IssueEntity.OPEN;
                     issue.ReopenedAt = group.Min(x => x.Read.Pending.ReceivedAt);
                     issue.ReopenedBuild = build;
-                    reopened++;
+                    reopened.Add(new NewIssue(issue, group.First().Read.Report));
                 }
 
                 db.Fingerprints.Add(

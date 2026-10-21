@@ -40,5 +40,9 @@
       Include="Turbo.Messages"
       HintPath="$(TurboCloudPath)\Turbo.Messages\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Messages.dll"
     />
+    <Reference
+      Include="Turbo.Events"
+      HintPath="$(TurboCloudPath)\Turbo.Events\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Events.dll"
+    />
   </ItemGroup>
 </Project>

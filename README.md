@@ -12,7 +12,10 @@ many players, on which builds, browsers and systems, and what the client did jus
 - Each issue keeps its counts in full, a day-by-day trend and its latest occurrences whole: the
   raw stack, React's component stack, the last messages the client sent (by name only) and the
   client's build, browser, system, renderer, viewport, room and player.
-- Each new issue can be posted to a Discord webhook.
+- Each new issue, and each resolved one that comes back, is told to other plugins as a plugin
+  notice: with the [Turbo Discord plugin](https://github.com/Diddyy/turbo-discord-plugin) loaded it
+  is posted to Discord like any other hotel event. Without it, the plugin can post new issues to a
+  webhook of its own.
 
 ![The issues](docs/screenshots/client-errors-list.png)
 
@@ -78,10 +81,33 @@ is loaded). A change applies at once.
 | `MaxOccurrencesPerIssue` | 50 | How many of an issue's latest occurrences are kept whole; counts are kept in full. |
 | `OccurrenceRetentionDays` | 30 | How long an occurrence is kept. |
 | `IssueRetentionDays` | 90 | How long an issue no client has reported is kept, with its counts and trend. 0: for ever. |
-| `DiscordWebhookUrl` | empty | A Discord webhook each new issue is posted to. Empty: none. A secret: the panel never shows it. |
+| `DiscordWebhookUrl` | empty | A Discord webhook each new issue is posted to. Empty: none. A secret: the panel never shows it. For a hotel without the Discord plugin, which is the preferred way (Notices, below). |
 | `DiscordMaxPerHour` | 10 | The most new issues posted in an hour; the rest are counted in the next post. |
 
 When the server has `Turbo:Admin:PanelUrl`, a Discord post links to the issue's page.
+
+## Notices (Discord)
+
+From version 1.1.0 the plugin publishes a `PluginNoticeEvent` (turbo-cloud's
+`docs/plugin-notices.md`, turbo-cloud #296 or later) on the hotel's event system, once the issue is
+stored:
+
+| Topic | When | Key | Level |
+| --- | --- | --- | --- |
+| `issue.new` | A fingerprint is a new issue. | the issue id | Error |
+| `issue.reopened` | A resolved issue is reported on a build it had not been seen on. | `<issue id>@<build>` | Warning |
+
+Each carries the message and top stack frames, the fields Kind, Build, Players and Count, and a
+link to the issue's page when the server has `Turbo:Admin:PanelUrl`. A reopened notice is keyed by
+its build as well, so an issue that comes back again on a later build is told again.
+
+The [Turbo Discord plugin](https://github.com/Diddyy/turbo-discord-plugin) is the preferred way to
+get these into Discord: it lists `plugin:clienterrors:issue.new` and
+`plugin:clienterrors:issue.reopened` in its routing table (off until the hotel turns them on and
+gives them a webhook), posts each once, and paces and queues its posts across restarts.
+`DiscordWebhookUrl` still works for a hotel without it; leave it empty when the Discord plugin is
+routing these, or new issues are posted twice. With no relay loaded a notice goes nowhere, and a
+notice that cannot be published is logged: the issue is stored either way.
 
 ## Permissions
 
@@ -111,7 +137,7 @@ plugin from the panel drops them.
 ## Build and install
 
 The plugin builds against a built turbo-cloud checkout (its `Turbo.*` assemblies are the host's and
-are never copied into the plugin's folder):
+are never copied into the plugin's folder), one with `PluginNoticeEvent` (turbo-cloud #296):
 
 ```sh
 TURBO_CLOUD=/path/to/turbo-cloud ./scripts/package.sh

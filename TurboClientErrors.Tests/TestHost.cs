@@ -108,6 +108,21 @@ internal sealed class TestHost : IDisposable
 
     public DiscordWebhook Discord { get; }
 
+    /// <summary>The notices, with no publisher until a test sets one.</summary>
+    public Notices Notices { get; } = new(NullLogger<Notices>.Instance);
+
+    /// <summary>The plugin's worker over this host, not started.</summary>
+    public ClientErrorsWorker Worker() =>
+        new(
+            Ingest,
+            Store,
+            Retention,
+            Discord,
+            Notices,
+            Time,
+            NullLogger<ClientErrorsWorker>.Instance
+        );
+
     public T Query<T>(Func<ClientErrorsDbContext, T> query)
     {
         using var scope = Services.CreateScope();

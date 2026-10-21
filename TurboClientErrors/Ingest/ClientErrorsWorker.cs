@@ -8,8 +8,9 @@ namespace TurboClientErrors.Ingest;
 
 /// <summary>
 /// The plugin's one background loop: takes queued reports in batches of up to
-/// <see cref="BATCH_SIZE"/> (or what came within <see cref="BATCH_WAIT"/>) into the tables, posts
-/// new issues to Discord without waiting for it, and runs retention a minute after start and then
+/// <see cref="BATCH_SIZE"/> (or what came within <see cref="BATCH_WAIT"/>) into the tables, tells
+/// other plugins of new and reopened issues (<see cref="Notices"/>), posts new issues to its own
+/// Discord webhook without waiting for it, and runs retention a minute after start and then
 /// hourly. A batch that fails is logged and dropped: the next one is not held up by it.
 /// </summary>
 public sealed class ClientErrorsWorker(
@@ -17,6 +18,7 @@ public sealed class ClientErrorsWorker(
     ClientErrorStore store,
     ClientErrorRetention retention,
     DiscordWebhook discord,
+    Notices notices,
     TimeProvider time,
     ILogger<ClientErrorsWorker> logger
 )
@@ -131,6 +133,13 @@ public sealed class ClientErrorsWorker(
 
             foreach (var issue in result.NewIssues)
                 _ = discord.PostNewAsync(issue);
+
+            // After the commit; Notices logs what it cannot publish, so the batch stands.
+            foreach (var issue in result.NewIssues)
+                await notices.NewAsync(issue, ct).ConfigureAwait(false);
+
+            foreach (var issue in result.Reopened)
+                await notices.ReopenedAsync(issue, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
             when (ex is not OperationCanceledException || !ct.IsCancellationRequested)

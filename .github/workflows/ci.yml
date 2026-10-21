@@ -28,7 +28,7 @@ jobs:
 
       - name: Build turbo-cloud's assemblies the plugin references
         run: |
-          for project in Turbo.Contracts Turbo.Primitives Turbo.Database Turbo.Pipeline Turbo.Messages; do
+          for project in Turbo.Contracts Turbo.Primitives Turbo.Database Turbo.Pipeline Turbo.Messages Turbo.Events; do
             dotnet build "turbo-cloud/$project/$project.csproj" -c Release -nologo -v q
           done
 

@@ -24,7 +24,7 @@ permissions:
 
 env:
   TURBO_CLOUD_REPOSITORY: nitrodevco/turbo-cloud
-  TURBO_CLOUD_REF: 7606c4d4fbbca56d3df6fcbee0325de54b241d32
+  TURBO_CLOUD_REF: 17757fbaf4ccef49b520bffeb6623ce0efd9485b
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
@@ -60,7 +60,7 @@ jobs:
 
       - name: Build turbo-cloud's assemblies the plugin references
         run: |
-          for project in Turbo.Contracts Turbo.Primitives Turbo.Database Turbo.Pipeline Turbo.Messages; do
+          for project in Turbo.Contracts Turbo.Primitives Turbo.Database Turbo.Pipeline Turbo.Messages Turbo.Events; do
             dotnet build "turbo-cloud/$project/$project.csproj" -c Release -nologo -v q
           done
 
