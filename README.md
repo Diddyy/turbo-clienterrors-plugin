@@ -126,8 +126,9 @@ setting applies to them as to core's tables.
 
 ### Releases
 
-A tag `v1.2.3` runs `.github/workflows/release.yml`: it builds and tests the plugin against
-turbo-cloud at the ref pinned there (`TURBO_CLOUD_REF`), stamps the manifest's `Version` (1.2.3)
+A tag `v1.2.3` (pushed, or named in a manual run of Release, which makes it on that commit) runs
+`.github/workflows/release.yml`: it builds and tests the plugin against turbo-cloud at the ref
+pinned there (`TURBO_CLOUD_REF`), stamps the manifest's `Version` (1.2.3)
 and `BuiltAgainst` (that ref), and attaches `clienterrors-v1.2.3.zip` to the tag's release. A
 server linked to this repository in the admin panel (Plugins, Link from GitHub) is offered the
 release and installs the zip. `ApiVersion` in the manifest is the turbo-cloud plugin API it is
