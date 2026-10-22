@@ -1,0 +1,30 @@
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+
+#nullable disable
+
+namespace TurboClientErrors.Database.Migrations
+{
+    /// <inheritdoc />
+    public partial class AddOccurrenceGpu : Migration
+    {
+        /// <inheritdoc />
+        protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder
+                .AddColumn<string>(
+                    name: "gpu",
+                    table: "clienterrors_occurrences",
+                    type: "varchar(1024)",
+                    maxLength: 1024,
+                    nullable: true
+                )
+                .Annotation("MySql:CharSet", "utf8mb4");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropColumn(name: "gpu", table: "clienterrors_occurrences");
+        }
+    }
+}
