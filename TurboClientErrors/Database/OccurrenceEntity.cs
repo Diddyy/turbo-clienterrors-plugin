@@ -97,4 +97,9 @@ public class OccurrenceEntity
     /// <summary>How long the client had been running, in milliseconds.</summary>
     [Column("uptime_ms")]
     public long UptimeMs { get; set; }
+
+    /// <summary>What the renderer and the page were when the GPU was lost (<c>renderer</c> reports), in one line.</summary>
+    [Column("gpu")]
+    [MaxLength(1024)]
+    public string? Gpu { get; set; }
 }

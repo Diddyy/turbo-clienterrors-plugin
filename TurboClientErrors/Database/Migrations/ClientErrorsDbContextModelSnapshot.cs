@@ -261,6 +261,11 @@ namespace TurboClientErrors.Database.Migrations
                         .HasColumnType("text")
                         .HasColumnName("component_stack");
 
+                    b.Property<string>("Gpu")
+                        .HasMaxLength(1024)
+                        .HasColumnType("varchar(1024)")
+                        .HasColumnName("gpu");
+
                     b.Property<int>("IssueId")
                         .HasColumnType("int")
                         .HasColumnName("issue_id");

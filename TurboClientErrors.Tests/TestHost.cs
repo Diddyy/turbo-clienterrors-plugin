@@ -164,7 +164,8 @@ internal sealed class TestHost : IDisposable
         string userAgent =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36",
         object[]? breadcrumbs = null,
-        string page = "https://hotel.example/client?sso=secret-ticket"
+        string page = "https://hotel.example/client?sso=secret-ticket",
+        object? gpu = null
     ) =>
         JsonSerializer.Serialize(
             new
@@ -190,6 +191,7 @@ internal sealed class TestHost : IDisposable
                 },
                 renderer = "webgpu",
                 uptimeMs = 65000,
+                gpu,
                 breadcrumbs = breadcrumbs
                     ??
                     [

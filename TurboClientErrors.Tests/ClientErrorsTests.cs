@@ -213,6 +213,7 @@ public class ClientErrorsTests
         Assert.Equal("1920x1080@1.25", report.Viewport);
         Assert.Equal(7, report.RoomId);
         Assert.Equal(2, report.Breadcrumbs.Count);
+        Assert.Null(report.Gpu);
 
         Assert.False(ClientErrorReport.TryRead(Bytes("not json"), 100, out _));
         Assert.False(ClientErrorReport.TryRead(Bytes("[1,2]"), 100, out _));
@@ -665,6 +666,46 @@ public class ClientErrorsTests
     }
 
     // Admin.
+
+    [Fact]
+    public async Task A_lost_GPU_report_keeps_what_the_renderer_held_and_its_occurrence_shows_it()
+    {
+        using var host = new TestHost();
+
+        await host.StoreAsync(
+            1,
+            TestHost.Report(
+                kind: "renderer",
+                message: "GPU device or context lost: the client started again",
+                gpu: new
+                {
+                    name = "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)",
+                    reason = "unknown",
+                    message = "GPU process crashed",
+                    visibility = "hidden",
+                    focused = false,
+                    textures = 331,
+                    renderTextures = 194,
+                    textureBytes = 40831092,
+                    heapBytes = 200024266,
+                    heapLimitBytes = 4395630592,
+                }
+            )
+        );
+
+        var occurrence = host.Query(db => db.Occurrences.Single());
+
+        Assert.Equal(
+            "ANGLE (NVIDIA, NVIDIA GeForce RTX 3080 Direct3D11 vs_5_0 ps_5_0, D3D11)"
+                + " | lost: unknown: GPU process crashed | page hidden, not focused"
+                + " | 331 textures (194 render), 38.9 MB | JS heap 190.8 MB of 4192.0 MB",
+            occurrence.Gpu
+        );
+        Assert.Contains(
+            "331 textures (194 render), 38.9 MB",
+            Admin.Json(await host.Admin().CallAsync("GET occurrences/{id}", occurrence.Id))
+        );
+    }
 
     [Fact]
     public async Task The_admin_pages_list_filter_resolve_link_and_delete_behind_their_own_nodes()

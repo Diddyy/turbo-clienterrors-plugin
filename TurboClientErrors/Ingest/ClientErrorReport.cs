@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Text;
 using System.Text.Json;
 
@@ -19,6 +20,7 @@ public sealed record ClientErrorReport
     public const int MAX_COMPONENT_STACK = 8000;
     public const int MAX_BREADCRUMBS = 30;
     public const int MAX_BREADCRUMB_TEXT = 120;
+    public const int MAX_GPU = 1024;
 
     /// <summary>How a client may say it caught an error; anything else is read as <c>error</c>.</summary>
     public static readonly IReadOnlySet<string> KINDS = new HashSet<string>
@@ -58,6 +60,12 @@ public sealed record ClientErrorReport
     public string? Renderer { get; init; }
 
     public long UptimeMs { get; init; }
+
+    /// <summary>
+    /// What the renderer and the page were when the GPU was lost, for a <c>renderer</c> report
+    /// (its <c>gpu</c>), in one line: <see cref="ReadGpu"/>.
+    /// </summary>
+    public string? Gpu { get; init; }
 
     public IReadOnlyList<Breadcrumb> Breadcrumbs { get; init; } = [];
 
@@ -113,6 +121,7 @@ public sealed record ClientErrorReport
                 Viewport = ReadViewport(root),
                 Renderer = Text(root, "renderer", 32),
                 UptimeMs = Math.Max(0, Number(root, "uptimeMs") ?? 0),
+                Gpu = ReadGpu(root),
                 Breadcrumbs = ReadBreadcrumbs(root),
             };
 
@@ -215,6 +224,60 @@ public sealed record ClientErrorReport
 
         return $"{width}x{height}@{ratio.ToString("0.##", CultureInfo.InvariantCulture)}";
     }
+
+    /// <summary>
+    /// The report's <c>gpu</c> as one line: the GPU's name; the browser's reason and message for the
+    /// loss; the page's visibility and focus; the renderer's textures, render textures and their
+    /// estimated size; the JS heap. Null when it says none of them.
+    /// </summary>
+    private static string? ReadGpu(JsonElement root)
+    {
+        if (!root.TryGetProperty("gpu", out var gpu) || gpu.ValueKind != JsonValueKind.Object)
+            return null;
+
+        var parts = new List<string>();
+
+        if (Text(gpu, "name", 256) is { } name)
+            parts.Add(name);
+
+        var lost = string.Join(
+            ": ",
+            new[] { Text(gpu, "reason", 32), Text(gpu, "message", 256) }.Where(x => x is not null)
+        );
+
+        if (lost.Length > 0)
+            parts.Add($"lost: {lost}");
+
+        if (Text(gpu, "visibility", 16) is { } visibility)
+            parts.Add(
+                gpu.TryGetProperty("focused", out var focused)
+                && focused.ValueKind is JsonValueKind.True or JsonValueKind.False
+                    ? $"page {visibility}, {(focused.GetBoolean() ? "focused" : "not focused")}"
+                    : $"page {visibility}"
+            );
+
+        if (Number(gpu, "textures") is { } textures and >= 0)
+        {
+            var render = Number(gpu, "renderTextures") is { } r and >= 0 ? $" ({r} render)" : "";
+            var size = Number(gpu, "textureBytes") is { } bytes and >= 0
+                ? $", {Megabytes(bytes)}"
+                : "";
+
+            parts.Add($"{textures} textures{render}{size}");
+        }
+
+        if (Number(gpu, "heapBytes") is { } heap and >= 0)
+            parts.Add(
+                Number(gpu, "heapLimitBytes") is { } limit and > 0
+                    ? $"JS heap {Megabytes(heap)} of {Megabytes(limit)}"
+                    : $"JS heap {Megabytes(heap)}"
+            );
+
+        return parts.Count == 0 ? null : Cut(string.Join(" | ", parts), MAX_GPU);
+    }
+
+    private static string Megabytes(long bytes) =>
+        $"{(bytes / 1048576.0).ToString("0.0", CultureInfo.InvariantCulture)} MB";
 
     private static IReadOnlyList<Breadcrumb> ReadBreadcrumbs(JsonElement root)
     {

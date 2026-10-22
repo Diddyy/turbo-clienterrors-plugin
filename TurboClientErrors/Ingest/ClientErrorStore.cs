@@ -298,5 +298,6 @@ public sealed class ClientErrorStore(
             Viewport = read.Report.Viewport,
             Renderer = read.Report.Renderer,
             UptimeMs = read.Report.UptimeMs,
+            Gpu = read.Report.Gpu,
         };
 }
