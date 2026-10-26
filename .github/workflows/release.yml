@@ -24,7 +24,7 @@ permissions:
 
 env:
   TURBO_CLOUD_REPOSITORY: nitrodevco/turbo-cloud
-  TURBO_CLOUD_REF: 17757fbaf4ccef49b520bffeb6623ce0efd9485b
+  TURBO_CLOUD_REF: 1905b7cb5e115968fe4347fcd3791c22375f6a89
   TAG: ${{ github.event.inputs.tag || github.ref_name }}
 
 jobs:
