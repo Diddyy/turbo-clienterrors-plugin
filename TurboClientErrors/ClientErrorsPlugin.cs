@@ -8,7 +8,7 @@ using Turbo.Contracts.Plugins;
 using Turbo.Contracts.Plugins.Admin;
 using Turbo.Contracts.Plugins.Exports;
 using Turbo.Database.Extensions;
-using Turbo.Events;
+using Turbo.Primitives.Events;
 using Turbo.Primitives.Networking.Extensions;
 using TurboClientErrors.Database;
 using TurboClientErrors.Ingest;
@@ -59,7 +59,7 @@ public sealed class ClientErrorsPlugin : ITurboPlugin
 
         _registry = host.GetRequiredService<IExtensionPacketRegistry>();
         _notices = services.GetRequiredService<Notices>();
-        _notices.Publisher = host.GetRequiredService<EventSystem>().PublishAsync;
+        _notices.Publisher = host.GetRequiredService<IEventPublisher>().PublishAsync;
         _registrations.Add(
             _registry.RegisterParser(ClientErrorsPackets.REPORT, new ClientErrorReportParser())
         );

@@ -50,20 +50,5 @@
       HintPath="$(TurboCloudPath)\Turbo.Database\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Database.dll"
       Private="$(TurboPrivate)"
     />
-    <Reference
-      Include="Turbo.Pipeline"
-      HintPath="$(TurboCloudPath)\Turbo.Pipeline\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Pipeline.dll"
-      Private="$(TurboPrivate)"
-    />
-    <Reference
-      Include="Turbo.Messages"
-      HintPath="$(TurboCloudPath)\Turbo.Messages\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Messages.dll"
-      Private="$(TurboPrivate)"
-    />
-    <Reference
-      Include="Turbo.Events"
-      HintPath="$(TurboCloudPath)\Turbo.Events\bin\$(TurboCloudConfiguration)\net10.0\Turbo.Events.dll"
-      Private="$(TurboPrivate)"
-    />
   </ItemGroup>
 </Project>
