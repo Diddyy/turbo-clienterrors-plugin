@@ -858,7 +858,8 @@ public class ClientErrorsTests
             "..",
             "..",
             "..",
-            "TurboClientErrors",
+            "..",
+            "server",
             "Database",
             "Migrations"
         );
